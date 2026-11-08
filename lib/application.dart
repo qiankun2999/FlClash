@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:fl_clash/bootstrap.dart';
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/profile_update_scheduler.dart';
 import 'package:fl_clash/common/system_dns.dart';
 import 'package:fl_clash/common/window.dart';
 import 'package:fl_clash/enum/enum.dart';
@@ -60,7 +61,8 @@ class Application extends ConsumerStatefulWidget {
 }
 
 class ApplicationState extends ConsumerState<Application> {
-  Timer? _autoUpdateProfilesTaskTimer;
+  ProfileUpdateScheduler? _profileUpdates;
+  Timer? _autoUpdateResourcesTaskTimer;
   bool _preHasVpn = false;
   // Windows can only watch SIGINT and SIGHUP.
   final _terminateSignals = system.isDesktop && !system.isWindows
@@ -77,7 +79,9 @@ class ApplicationState extends ConsumerState<Application> {
       } else {
         exit(0);
       }
-      _autoUpdateProfilesTask();
+      if (!mounted) return;
+      _startProfileUpdates();
+      _autoUpdateResourcesTask();
       _initLink();
       if (!safeModeBuild) {
         unawaited(app?.initShortcuts());
@@ -114,22 +118,45 @@ class ApplicationState extends ConsumerState<Application> {
     });
   }
 
-  void _autoUpdateProfilesTask() {
-    _autoUpdateProfilesTaskTimer = Timer(const Duration(minutes: 20), () async {
-      await ref.read(profilesActionProvider.notifier).autoUpdateProfiles();
-      await ref.read(resourcesActionProvider.notifier).autoUpdate();
-      await ref.read(mitmModulesActionProvider.notifier).autoUpdate();
-      if (!mounted) {
-        return;
-      }
-      _autoUpdateProfilesTask();
+  void _startProfileUpdates() {
+    _profileUpdates = ProfileUpdateScheduler(
+      readProfiles: () => ref.read(profilesProvider),
+      updateProfile: (profile) =>
+          ref.read(profilesActionProvider.notifier).updateProfile(profile),
+      onError: (error, _) =>
+          commonPrint.log(compactError(error), logLevel: LogLevel.warning),
+    );
+    ref.listenManual(profilesProvider, (_, _) {
+      _profileUpdates?.reschedule();
+    }, fireImmediately: true);
+    ref.listenManual(appVisibleProvider, (_, visible) {
+      if (visible) _profileUpdates?.reschedule();
     });
+  }
+
+  void _autoUpdateResourcesTask() {
+    _autoUpdateResourcesTaskTimer = Timer(
+      const Duration(minutes: 20),
+      () async {
+        try {
+          await Future.wait([
+            ref.read(resourcesActionProvider.notifier).autoUpdate(),
+            ref.read(mitmModulesActionProvider.notifier).autoUpdate(),
+          ]);
+        } catch (error) {
+          commonPrint.log(compactError(error), logLevel: LogLevel.warning);
+        } finally {
+          if (mounted) _autoUpdateResourcesTask();
+        }
+      },
+    );
   }
 
   Future<void> _handleConnectivityChanged(
     List<ConnectivityResult> results,
   ) async {
     commonPrint.log('connectivityChanged ${results.toString()}');
+    _profileUpdates?.reschedule();
     unawaited(systemDnsCoordinator?.resync() ?? Future.value());
     unawaited(ref.read(systemActionProvider.notifier).updateLocalIp());
     final hasVpn = results.contains(ConnectivityResult.vpn);
@@ -205,7 +232,8 @@ class ApplicationState extends ConsumerState<Application> {
   @override
   void dispose() {
     linkManager.destroy();
-    _autoUpdateProfilesTaskTimer?.cancel();
+    _profileUpdates?.dispose();
+    _autoUpdateResourcesTaskTimer?.cancel();
     super.dispose();
   }
 }
