@@ -97,7 +97,7 @@ void main() {
       profile(3, 20),
     ];
     start();
-    await tester.pump();
+    await tester.pump(Duration.zero);
     expect(updates, unorderedEquals([1, 2]));
     expect(errors, isEmpty);
   });
@@ -144,7 +144,7 @@ void main() {
     expect(updates, isEmpty);
     profiles = [profiles.first.copyWith(autoUpdate: true)];
     scheduler.reschedule();
-    await tester.pump();
+    await tester.pump(Duration.zero);
     expect(updates, [1]);
   });
 
@@ -161,7 +161,7 @@ void main() {
       expect(updates, unorderedEquals([1, 2]));
       expect(errors, hasLength(1));
       scheduler.reschedule();
-      await tester.pump();
+      await tester.pump(Duration.zero);
       expect(updates, hasLength(2));
       fail = false;
       await elapse(tester, 1);
@@ -191,7 +191,7 @@ void main() {
       await elapse(tester, 10);
       expect(updates, [1, 2]);
       pending.complete();
-      await tester.pump();
+      await tester.pump(Duration.zero);
       await elapse(tester, 5);
       expect(updates, [1, 2, 2]);
       await elapse(tester, 5);
@@ -206,7 +206,7 @@ void main() {
       start();
       now = now.add(const Duration(hours: 2));
       scheduler.reschedule();
-      await tester.pump();
+      await tester.pump(Duration.zero);
       expect(updates, unorderedEquals([1, 2]));
       await elapse(tester, 9);
       expect(updates, hasLength(2));
@@ -221,7 +221,7 @@ void main() {
   ) async {
     profiles = [profile(1, 0), profile(2, -1)];
     start();
-    await tester.pump();
+    await tester.pump(Duration.zero);
     expect(updates, isEmpty);
     await elapse(tester, defaultUpdateDuration.inMinutes);
     expect(updates, unorderedEquals([1, 2]));
@@ -237,11 +237,11 @@ void main() {
       await elapse(tester, 10);
       scheduler.dispose();
       pending.complete();
-      await tester.pump();
+      await tester.pump(Duration.zero);
       await elapse(tester, 30);
       expect(updates, [1]);
       scheduler.reschedule();
-      await tester.pump();
+      await tester.pump(Duration.zero);
       expect(updates, [1]);
     },
   );
