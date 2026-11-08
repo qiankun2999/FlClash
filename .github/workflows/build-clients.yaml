@@ -2,6 +2,15 @@ name: Build Windows and Android
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Client to package
+        type: choice
+        default: all
+        options:
+          - all
+          - windows
+          - android
 
 permissions:
   contents: read
@@ -66,11 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows
-            os: windows-2022
-          - platform: android
-            os: ubuntu-latest
+        include: ${{ fromJSON(inputs.platform == 'android' && '[{"platform":"android","os":"ubuntu-latest"}]' || inputs.platform == 'windows' && '[{"platform":"windows","os":"windows-2022"}]' || '[{"platform":"windows","os":"windows-2022"},{"platform":"android","os":"ubuntu-latest"}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -144,9 +149,21 @@ jobs:
           echo "$CA_BUNDLE_SHA256  $bundle" | sha256sum -c -
 
       - name: Package client
+        shell: bash
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: dart setup.dart ${{ matrix.platform }} -v
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          for attempt in 1 2 3; do
+            if dart setup.dart "$TARGET_PLATFORM" -v; then
+              exit 0
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            echo "Packaging attempt $attempt failed; retrying with downloaded dependencies retained."
+            sleep 10
+          done
 
       - uses: actions/upload-artifact@v4
         with:
